@@ -1,0 +1,9 @@
+protobuf == 4.22.1
+googleapis-common-protos==1.59.0
+grpcio==1.53.0
+grpcio-status==1.53.0
+grpcio-tools==1.53.0
+grpc-interceptor==0.15.0
+six~=1.16.0
+simplejson==3.18.4
+pyone==6.8.0

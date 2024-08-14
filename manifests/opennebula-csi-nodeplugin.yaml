@@ -1,0 +1,115 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: opennebula-csi-nodeplugin
+  namespace: kube-system
+spec:
+  selector:
+    matchLabels:
+      name: opennebula-csi-nodeplugin
+  template:
+    metadata:
+      labels:
+        name: opennebula-csi-nodeplugin
+    spec:
+      containers:
+      - args:
+        - python3
+        - server.py
+        - --log
+        - DEBUG
+        env:
+        - name: CSI_ENDPOINT
+          value: unix:///csi/csi.sock
+        - name: SP_NODE_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: spec.nodeName
+        - name: PYTHONUNBUFFERED
+          value: "1"
+        image: cts.storpool.com/opennebula-csi/pre-release:v0.0.24
+        livenessProbe:
+          failureThreshold: 5
+          httpGet:
+            path: /healthz
+            port: healthz
+            scheme: HTTP
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          successThreshold: 1
+          timeoutSeconds: 3
+        name: opennebula-csi-plugin
+        ports:
+        - containerPort: 9808
+          name: healthz
+          protocol: TCP
+        securityContext:
+          allowPrivilegeEscalation: true
+          capabilities:
+            add:
+            - SYS_ADMIN
+          privileged: true
+        volumeMounts:
+        - mountPath: /dev
+          mountPropagation: HostToContainer
+          name: dev-dir
+        - mountPath: /csi
+          name: socket-dir
+        - mountPath: /var/lib/kubelet
+          mountPropagation: Bidirectional
+          name: mountpoint-dir
+        - mountPath: /var/lib/cloud
+          name: cloud-dir
+          readOnly: true
+      - args:
+        - --csi-address=/csi/csi.sock
+        - --kubelet-registration-path=/var/lib/kubelet/plugins/csi.storpool.com/csi.sock
+        image: registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.8.0
+        imagePullPolicy: IfNotPresent
+        name: node-driver-registrar
+        resources: {}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /csi
+          name: socket-dir
+        - mountPath: /registration
+          name: registration-dir
+      - args:
+        - --csi-address=/csi/csi.sock
+        - --v=4
+        image: k8s.gcr.io/sig-storage/livenessprobe:v2.10.0
+        imagePullPolicy: IfNotPresent
+        name: liveness-probe
+        resources: {}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /csi
+          name: socket-dir
+      nodeSelector:
+        kubernetes.io/os: linux
+      serviceAccountName: opennebula-csi-node-sa
+      terminationGracePeriodSeconds: 30
+      volumes:
+      - hostPath:
+          path: /dev
+          type: Directory
+        name: dev-dir
+      - hostPath:
+          path: /var/lib/cloud
+          type: Directory
+        name: cloud-dir
+      - hostPath:
+          path: /var/lib/kubelet/plugins/csi.opennebula.io
+          type: DirectoryOrCreate
+        name: socket-dir
+      - hostPath:
+          path: /var/lib/kubelet
+          type: Directory
+        name: mountpoint-dir
+      - hostPath:
+          path: /var/lib/kubelet/plugins_registry
+          type: Directory
+        name: registration-dir

@@ -1,0 +1,144 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opennebula-csi-controllerplugin
+  namespace: kube-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      name: storpool-csi-controllerplugin
+  template:
+    metadata:
+      labels:
+        name: storpool-csi-controllerplugin
+    spec:
+      containers:
+      - args:
+        - python3
+        - server.py
+        - --log
+        - DEBUG
+        env:
+        - name: CSI_ENDPOINT
+          value: unix:///csi/csi.sock
+        - name: SP_NODE_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: spec.nodeName
+        - name: PYTHONUNBUFFERED
+          value: "1"
+        image: cts.storpool.com/opennebula-csi/pre-release:v0.0.24
+        name: opennebula-csi-plugin
+        ports:
+        - containerPort: 9808
+          name: healthz
+          protocol: TCP
+        tty: true
+        volumeMounts:
+        - mountPath: /var/lib/cloud
+          name: cloud-dir
+          readOnly: true
+        - mountPath: /csi
+          name: socket-dir
+      - args:
+        - --csi-address=$(ADDRESS)
+        - --default-fstype=ext4
+        - --extra-create-metadata
+        - --leader-election
+        - --http-endpoint=:8080
+        env:
+        - name: ADDRESS
+          value: /var/lib/csi/sockets/pluginproxy/csi.sock
+        image: registry.k8s.io/sig-storage/csi-provisioner:v3.5.0
+        livenessProbe:
+          failureThreshold: 1
+          httpGet:
+            path: /healthz/leader-election
+            port: http-endpoint
+            scheme: HTTP
+          initialDelaySeconds: 10
+          periodSeconds: 20
+          successThreshold: 1
+          timeoutSeconds: 10
+        name: csi-provisioner
+        ports:
+        - containerPort: 8080
+          name: http-endpoint
+          protocol: TCP
+        volumeMounts:
+        - mountPath: /var/lib/csi/sockets/pluginproxy/
+          name: socket-dir
+      - args:
+        - --csi-address=$(ADDRESS)
+        - --leader-election
+        - --http-endpoint=:8081
+        env:
+        - name: ADDRESS
+          value: /var/lib/csi/sockets/pluginproxy/csi.sock
+        image: registry.k8s.io/sig-storage/csi-attacher:v4.3.0
+        livenessProbe:
+          failureThreshold: 1
+          httpGet:
+            path: /healthz/leader-election
+            port: http-endpoint
+            scheme: HTTP
+          initialDelaySeconds: 10
+          periodSeconds: 20
+          successThreshold: 1
+          timeoutSeconds: 10
+        name: csi-attacher
+        ports:
+        - containerPort: 8081
+          name: http-endpoint
+          protocol: TCP
+        volumeMounts:
+        - mountPath: /var/lib/csi/sockets/pluginproxy/
+          name: socket-dir
+      - args:
+        - --csi-address=$(ADDRESS)
+        - --leader-election
+        - --http-endpoint=:8082
+        - --timeout=30s
+        env:
+        - name: ADDRESS
+          value: /var/lib/csi/sockets/pluginproxy/csi.sock
+        image: registry.k8s.io/sig-storage/csi-resizer:v1.8.0
+        livenessProbe:
+          failureThreshold: 1
+          httpGet:
+            path: /healthz/leader-election
+            port: http-endpoint
+            scheme: HTTP
+          initialDelaySeconds: 10
+          periodSeconds: 20
+          successThreshold: 1
+          timeoutSeconds: 10
+        name: csi-resizer
+        ports:
+        - containerPort: 8082
+          name: http-endpoint
+          protocol: TCP
+        volumeMounts:
+        - mountPath: /var/lib/csi/sockets/pluginproxy/
+          name: socket-dir
+      - args:
+        - --csi-address=$(ADDRESS)
+        env:
+        - name: ADDRESS
+          value: /var/lib/csi/sockets/pluginproxy/csi.sock
+        image: k8s.gcr.io/sig-storage/livenessprobe:v2.10.0
+        name: liveness-probe
+        volumeMounts:
+        - mountPath: /var/lib/csi/sockets/pluginproxy/
+          name: socket-dir
+      serviceAccountName: opennebula-csi-controller-sa
+      terminationGracePeriodSeconds: 30
+      volumes:
+      - hostPath:
+          path: /var/lib/cloud
+          type: Directory
+        name: cloud-dir
+      - emptyDir: {}
+        name: socket-dir

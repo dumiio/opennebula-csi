@@ -1,0 +1,12 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: storpool-nvme
+provisioner: csi.opennebula.io
+parameters:
+  datastore_id: 1
+mountOptions:
+  - noatime
+allowVolumeExpansion: true
+volumeBindingMode: WaitForFirstConsumer
+
