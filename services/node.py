@@ -4,6 +4,7 @@ Bla-bla
 import distutils.util
 import logging
 import subprocess
+import os
 
 from pathlib import Path
 
@@ -126,6 +127,9 @@ class NodeServicer(csi_pb2_grpc.NodeServicer):
 
         volume_expand_cap = response.capabilities.add()
         volume_expand_cap.rpc.type = volume_expand_cap.RPC.EXPAND_VOLUME
+
+        volume_stats_cap = response.capabilities.add()
+        volume_stats_cap.rpc.type = volume_stats_cap.RPC.GET_VOLUME_STATS
 
         return response
 
@@ -451,6 +455,73 @@ class NodeServicer(csi_pb2_grpc.NodeServicer):
                 )
 
         return csi_pb2.NodeUnpublishVolumeResponse()
+
+    def NodeGetVolumeStats(self, request, context):
+        if not request.volume_id:
+            raise InvalidArgument("Missing volume id")
+
+        if not request.volume_path:
+            raise InvalidArgument("Missing volume path")
+
+        logger.info(
+            "Getting volume stats for %s at path %s",
+            request.volume_id,
+            request.volume_path,
+        )
+
+        volume_path = Path(request.volume_path)
+
+        if not volume_path.exists():
+            logger.error(
+                "Volume path %s does not exist", request.volume_path
+            )
+            raise NotFound(f"Volume path {request.volume_path} does not exist")
+        
+        if not volume_path.is_mount():
+            logger.error(
+                f"Volume {request.volume_id} is not attached to node {self._node_id}"
+            )
+            raise NotFound(f"Volume {request.volume_id} is not attached to node {self._node_id}")
+
+        response = csi_pb2.NodeGetVolumeStatsResponse()
+
+        try:
+            stat = os.statvfs(request.volume_path)
+            
+            bytes_usage = response.usage.add()
+            bytes_usage.unit = csi_pb2.VolumeUsage.Unit.BYTES
+            
+            bytes_usage.total = stat.f_blocks * stat.f_frsize
+            bytes_usage.available = stat.f_bavail * stat.f_frsize
+            bytes_usage.used = (stat.f_blocks - stat.f_bfree) * stat.f_frsize
+            
+            inodes_usage = response.usage.add()
+            inodes_usage.unit = csi_pb2.VolumeUsage.Unit.INODES
+            
+            inodes_usage.total = stat.f_files
+            inodes_usage.available = stat.f_favail
+            inodes_usage.used = stat.f_files - stat.f_ffree
+            
+            logger.debug(
+                "Volume %s stats: bytes total=%d, available=%d, used=%d; inodes total=%d, available=%d, used=%d",
+                request.volume_id,
+                bytes_usage.total,
+                bytes_usage.available,
+                bytes_usage.used,
+                inodes_usage.total,
+                inodes_usage.available,
+                inodes_usage.used,
+            )
+
+        except Exception as e:
+            logger.error(
+                "Failed to get volume stats for %s: %s",
+                request.volume_id,
+                str(e),
+            )
+            raise Internal(f"Failed to get volume stats: {str(e)}")
+
+        return response
 
     def NodeExpandVolume(self, request, context):
         """
