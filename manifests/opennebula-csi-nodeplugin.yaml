@@ -28,7 +28,22 @@ spec:
               fieldPath: spec.nodeName
         - name: PYTHONUNBUFFERED
           value: "1"
-        image: cts.storpool.com/opennebula-csi/pre-release:v0.0.24
+        - name: ONE_API_ENDPOINT
+          valueFrom:
+            secretKeyRef:
+              name: one-csi-credentials
+              key: one-rpc-api-endpoint
+        - name: ONE_API_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: one-csi-credentials
+              key: one-rpc-api-username
+        - name: ONE_API_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: one-csi-credentials
+              key: one-rpc-api-password
+        image: harbor.imperiax.info/opennebula-csi/pre-release:v0.0.24.2
         livenessProbe:
           failureThreshold: 5
           httpGet:
@@ -64,7 +79,7 @@ spec:
           readOnly: true
       - args:
         - --csi-address=/csi/csi.sock
-        - --kubelet-registration-path=/var/lib/kubelet/plugins/csi.storpool.com/csi.sock
+        - --kubelet-registration-path=/var/lib/kubelet/plugins/csi.opennebula.io/csi.sock
         image: registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.8.0
         imagePullPolicy: IfNotPresent
         name: node-driver-registrar
